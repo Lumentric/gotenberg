@@ -1,10 +1,16 @@
 package libreoffice
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/gotenberg/gotenberg/v7/pkg/gotenberg"
 	"github.com/gotenberg/gotenberg/v7/pkg/modules/api"
 	"github.com/gotenberg/gotenberg/v7/pkg/modules/libreoffice/uno"
@@ -30,6 +36,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				nativePDFformat    string
 				PDFformat          string
 				merge              bool
+				asImages           bool
 			)
 
 			err := ctx.FormData().
@@ -40,6 +47,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				String("nativePdfFormat", &nativePDFformat, "").
 				String("pdfFormat", &PDFformat, "").
 				Bool("merge", &merge, false).
+				Bool("asImages", &asImages, false).
 				Validate()
 
 			if err != nil {
@@ -68,6 +76,13 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				return api.WrapError(
 					errors.New("got both 'pdfFormat' and 'nativePdfFormat' form fields"),
 					api.NewSentinelHTTPError(http.StatusBadRequest, "Both 'pdfFormat' and 'nativePdfFormat' form fields are provided"),
+				)
+			}
+
+			if asImages && len(inputPaths) > 1 {
+				return api.WrapError(
+					errors.New("multiple input files are not supported when converting to images"),
+					api.NewSentinelHTTPError(http.StatusBadRequest, fmt.Sprintf("there should be only one input file when converting to images")),
 				)
 			}
 
@@ -189,10 +204,107 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				outputPaths = convertOutputPaths
 			}
 
-			// Last but not least, add the output paths to the context so that
-			// the API is able to send them as a response to the client.
+			if asImages {
+				resultDir := filepath.Join(filepath.Dir(outputPaths[0]), uuid.NewString())
+				err := os.MkdirAll(resultDir, 0755)
+				if err != nil {
+					return fmt.Errorf("cannot create result folder: %w", err)
+				}
 
-			err = ctx.AddOutputPaths(outputPaths...)
+				outputFilePath := filepath.Join(resultDir, "slide.png")
+				// These defaults seem to produce a reasonably good quality
+				density, densityDefined := os.LookupEnv("SLIDE_IMAGE_DENSITY")
+				if !densityDefined {
+					density = "288"
+				}
+				quality, qualityDefined := os.LookupEnv("SLIDE_IMAGE_QUALITY")
+				if !qualityDefined {
+					quality = "85"
+				}
+
+				resize, resizeDefined := os.LookupEnv("SLIDE_IMAGE_RESIZE")
+				if !resizeDefined {
+					resize = "50%"
+				}
+
+				args := []string{
+					"-density",
+					density,
+					//fmt.Sprintf("-density %s", density),
+					outputPaths[0],
+					"-quality",
+					quality,
+					"-resize",
+					resize,
+					//fmt.Sprintf("-quality %s", quality),
+					outputFilePath,
+				}
+
+				//convertCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/convert", args...)
+				//if err != nil {
+				//	return api.WrapError(
+				//		fmt.Errorf("failed to build a command for conversion to images: %w", err),
+				//		api.NewSentinelHTTPError(http.StatusBadRequest, fmt.Sprintf("failed to build a command for conversion to images")),
+				//	)
+				//}
+
+				convertCmd := exec.CommandContext(ctx, "/usr/bin/convert", args...)
+				var outBuffer, errBuffer bytes.Buffer
+				convertCmd.Stdout = &outBuffer
+				convertCmd.Stderr = &errBuffer
+
+				err = convertCmd.Run()
+				if err != nil {
+					ctx.Log().Error("> > > COMMAND WAS: " + convertCmd.String())
+					ctx.Log().Error("> > > STDOUT: " + outBuffer.String())
+					ctx.Log().Error("> > > STD ERR: " + errBuffer.String())
+					return fmt.Errorf("failed to convert pdf to images: %w", err)
+				}
+
+				//exitCode, err := convertCmd.Exec()
+				//
+				//if err != nil {
+				//	ctx.Log().Error("> > COMMAND WAS: " + convertCmd.CmdString())
+				//	return fmt.Errorf("failed to create images from PDF: %w, exit code: %d", err, exitCode)
+				//}
+
+				var resultPaths []string
+
+				err = filepath.WalkDir(resultDir, func(path string, info fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if info.IsDir() {
+						// Skip folders, need images only
+						return nil
+					}
+
+					resultPaths = append(resultPaths, path)
+					return nil
+				})
+
+				if err != nil {
+					return fmt.Errorf("failed to return created images: %w", err)
+				}
+
+				dataCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/python", "/home/gotenberg/write_slide_data.py", inputPaths[0], resultDir)
+				if err != nil {
+					return fmt.Errorf("failed to create a command that writes slide data: %w", err)
+				}
+
+				_, err = dataCmd.Exec()
+				if err != nil {
+					return fmt.Errorf("failed to write slide data: %w", err)
+				}
+				resultPaths = append(resultPaths, filepath.Join(resultDir, "data.json"))
+
+				err = ctx.AddOutputPaths(resultPaths...)
+			} else {
+				// Last but not least, add the output paths to the context so that
+				// the API is able to send them as a response to the client.
+				err = ctx.AddOutputPaths(outputPaths...)
+			}
+
 			if err != nil {
 				return fmt.Errorf("add output paths: %w", err)
 			}

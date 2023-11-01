@@ -2,6 +2,7 @@ package gotenberg
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -82,6 +83,10 @@ func (cmd Cmd) Wait() error {
 	}
 
 	return nil
+}
+
+func (cmd Cmd) CmdString() string {
+	return cmd.process.String()
 }
 
 // Exec executes the command and wait for its completion or until the context
@@ -203,4 +208,12 @@ func (cmd Cmd) Kill() error {
 	}
 
 	return fmt.Errorf("kill unix process: %w", err)
+}
+
+func (cmd Cmd) SetStdout(stdout *bytes.Buffer) {
+	cmd.process.Stdout = stdout
+}
+
+func (cmd Cmd) SetStderr(stderr *bytes.Buffer) {
+	cmd.process.Stderr = stderr
 }

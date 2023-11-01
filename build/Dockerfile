@@ -57,7 +57,7 @@ RUN \
     # Install system dependencies required for the next instructions or debugging.
     # Note: tini is a helper for reaping zombie processes.
     apt-get update -qq &&\
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl gnupg htop tini python3 default-jre-headless &&\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl gnupg htop tini python3 python3-pip default-jre-headless ghostscript imagemagick &&\
     ln -s /usr/bin/htop /usr/bin/top &&\
     # Cleanup.
     # Note: the Debian image does automatically a clean after each install thanks to a hook.
@@ -169,11 +169,18 @@ RUN \
     # Cleanup.
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+RUN \
+    python -v -m pip install python-pptx
+
 # Improve fonts subpixel hinting and smoothing.
 # Credits:
 # https://github.com/arachnys/athenapdf/issues/69.
 # https://github.com/arachnys/athenapdf/commit/ba25a8d80a25d08d58865519c4cd8756dc9a336d.
 COPY build/fonts.conf /etc/fonts/conf.d/100-gotenberg.conf
+# TODO: have to override security policy for PDF to allow conversion to pictures, is there a better way around?
+COPY imagick/policy.xml /etc/ImageMagick-6/policy.xml
+COPY scripts/write_slide_data.py /home/gotenberg
+
 
 # Copy the Gotenberg binary from the binary stage.
 COPY --from=binary-stage /home/gotenberg /usr/bin/

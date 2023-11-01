@@ -74,12 +74,12 @@ func newContext(echoCtx echo.Context, logger *zap.Logger, timeout time.Duration)
 				return
 			}
 
-			err := os.RemoveAll(ctx.dirPath)
-			if err != nil {
-				ctx.logger.Error(fmt.Sprintf("remove context's working directory: %s", err))
-
-				return
-			}
+			//err := os.RemoveAll(ctx.dirPath)
+			//if err != nil {
+			//	ctx.logger.Error(fmt.Sprintf("remove context's working directory: %s", err))
+			//
+			//	return
+			//}
 
 			ctx.logger.Debug(fmt.Sprintf("'%s' removed", ctx.dirPath))
 			ctx.cancelled = true
