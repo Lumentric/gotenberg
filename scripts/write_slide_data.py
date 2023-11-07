@@ -38,9 +38,11 @@ for entry in folder_content:
     # Names are supposed to be like Slide-0.jpg, Slide-1.jpg etc.
     index_match = re.findall(r"-(\d+)" + re.escape(ext) + r"$", entry)
     if len(index_match) == 0:
-        raise Exception("Cannot find title for image " + entry + " because cannot figure out its index")
+        # When there is a single slide there is no index in title
+        index = 0
+    else:
+        index = int(index_match[0])
 
-    index = int(index_match[0])
     entry_title = titles[index]
 
     slides_data.append({

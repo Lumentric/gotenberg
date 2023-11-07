@@ -88,6 +88,7 @@ RUN \
     fonts-sil-padauk \
     fonts-telu \
     fonts-thai-tlwg \
+    fonts-opensymbol \
     ttf-wqy-zenhei \
     fonts-arphic-ukai \
     fonts-arphic-uming \
