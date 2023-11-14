@@ -88,7 +88,6 @@ RUN \
     fonts-sil-padauk \
     fonts-telu \
     fonts-thai-tlwg \
-    fonts-opensymbol \
     ttf-wqy-zenhei \
     fonts-arphic-ukai \
     fonts-arphic-uming \
@@ -178,9 +177,9 @@ RUN \
 # https://github.com/arachnys/athenapdf/issues/69.
 # https://github.com/arachnys/athenapdf/commit/ba25a8d80a25d08d58865519c4cd8756dc9a336d.
 COPY build/fonts.conf /etc/fonts/conf.d/100-gotenberg.conf
-# TODO: have to override security policy for PDF to allow conversion to pictures, is there a better way around?
+# Have to override the default imagick security policy for PDF to allow conversion to pictures
 COPY imagick/policy.xml /etc/ImageMagick-6/policy.xml
-COPY scripts/write_slide_data.py /home/gotenberg
+COPY scripts/write_slide_data.py /usr/bin/
 
 
 # Copy the Gotenberg binary from the binary stage.

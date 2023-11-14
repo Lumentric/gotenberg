@@ -1,13 +1,11 @@
 package libreoffice
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -37,6 +35,9 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				PDFformat          string
 				merge              bool
 				asImages           bool
+				slideImageDensity  string
+				slideImageQuality  string
+				slideImageResize   string
 			)
 
 			err := ctx.FormData().
@@ -48,6 +49,11 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				String("pdfFormat", &PDFformat, "").
 				Bool("merge", &merge, false).
 				Bool("asImages", &asImages, false).
+				// These defaults seem to produce a reasonably good quality
+				String("slideImageDensity", &slideImageDensity, "288").
+				String("slideImageQuality", &slideImageQuality, "85").
+				// Rendering at a higher density and then reducing size seems to produce better quality
+				String("slideImageResize", &slideImageResize, "50%").
 				Validate()
 
 			if err != nil {
@@ -212,61 +218,46 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				}
 
 				outputFilePath := filepath.Join(resultDir, "slide.png")
-				// These defaults seem to produce a reasonably good quality
-				density, densityDefined := os.LookupEnv("SLIDE_IMAGE_DENSITY")
-				if !densityDefined {
-					density = "288"
-				}
-				quality, qualityDefined := os.LookupEnv("SLIDE_IMAGE_QUALITY")
-				if !qualityDefined {
-					quality = "85"
-				}
-
-				resize, resizeDefined := os.LookupEnv("SLIDE_IMAGE_RESIZE")
-				if !resizeDefined {
-					resize = "50%"
-				}
 
 				args := []string{
 					"-density",
-					density,
-					//fmt.Sprintf("-density %s", density),
+					slideImageDensity,
 					outputPaths[0],
 					"-quality",
-					quality,
+					slideImageQuality,
 					"-resize",
-					resize,
-					//fmt.Sprintf("-quality %s", quality),
+					slideImageResize,
 					outputFilePath,
 				}
 
-				//convertCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/convert", args...)
-				//if err != nil {
-				//	return api.WrapError(
-				//		fmt.Errorf("failed to build a command for conversion to images: %w", err),
-				//		api.NewSentinelHTTPError(http.StatusBadRequest, fmt.Sprintf("failed to build a command for conversion to images")),
-				//	)
-				//}
-
-				convertCmd := exec.CommandContext(ctx, "/usr/bin/convert", args...)
-				var outBuffer, errBuffer bytes.Buffer
-				convertCmd.Stdout = &outBuffer
-				convertCmd.Stderr = &errBuffer
-
-				err = convertCmd.Run()
+				convertCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/convert", args...)
 				if err != nil {
-					ctx.Log().Error("> > > COMMAND WAS: " + convertCmd.String())
-					ctx.Log().Error("> > > STDOUT: " + outBuffer.String())
-					ctx.Log().Error("> > > STD ERR: " + errBuffer.String())
-					return fmt.Errorf("failed to convert pdf to images: %w", err)
+					return api.WrapError(
+						fmt.Errorf("failed to build a command for conversion to images: %w", err),
+						api.NewSentinelHTTPError(http.StatusBadRequest, fmt.Sprintf("failed to build a command for conversion to images")),
+					)
 				}
 
-				//exitCode, err := convertCmd.Exec()
-				//
+				// Uncomment this block if there is a need to inspect command output
+				//convertCmd := exec.CommandContext(ctx, "/usr/bin/convert", args...)
+				//var outBuffer, errBuffer bytes.Buffer
+				//convertCmd.Stdout = &outBuffer
+				//convertCmd.Stderr = &errBuffer
+
+				//err = convertCmd.Exec()
 				//if err != nil {
-				//	ctx.Log().Error("> > COMMAND WAS: " + convertCmd.CmdString())
-				//	return fmt.Errorf("failed to create images from PDF: %w, exit code: %d", err, exitCode)
+				//	ctx.Log().Error("> > > COMMAND WAS: " + convertCmd.String())
+				//	ctx.Log().Error("> > > STDOUT: " + outBuffer.String())
+				//	ctx.Log().Error("> > > STD ERR: " + errBuffer.String())
+				//	return fmt.Errorf("failed to convert pdf to images: %w", err)
 				//}
+
+				exitCode, err := convertCmd.Exec()
+
+				if err != nil {
+					ctx.Log().Error("> > COMMAND WAS: " + convertCmd.CmdString())
+					return fmt.Errorf("failed to create images from PDF: %w, exit code: %d", err, exitCode)
+				}
 
 				var resultPaths []string
 
@@ -287,13 +278,28 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					return fmt.Errorf("failed to return created images: %w", err)
 				}
 
-				dataCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/python", "/home/gotenberg/write_slide_data.py", inputPaths[0], resultDir)
+				dataCmd, err := gotenberg.CommandContext(
+					ctx,
+					ctx.Log(),
+					"/usr/bin/python",
+					"/usr/bin/write_slide_data.py",
+					inputPaths[0],
+					resultDir,
+				)
 				if err != nil {
 					return fmt.Errorf("failed to create a command that writes slide data: %w", err)
 				}
 
+				//dataCmd := exec.CommandContext(ctx, "/usr/bin/python", "/usr/bin/write_slide_data.py", inputPaths[0], resultDir)
+				//var pyOut, pyErr bytes.Buffer
+				//dataCmd.Stdout = &pyOut
+				//dataCmd.Stderr = &pyErr
+
 				_, err = dataCmd.Exec()
 				if err != nil {
+					//ctx.Log().Error("> > > PYTHON SCRIPT FAILED ")
+					//ctx.Log().Error("> > > OUTPUT: " + pyOut.String())
+					//ctx.Log().Error("> > > ERROR: " + pyErr.String())
 					return fmt.Errorf("failed to write slide data: %w", err)
 				}
 				resultPaths = append(resultPaths, filepath.Join(resultDir, "data.json"))
