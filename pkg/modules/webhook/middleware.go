@@ -257,7 +257,7 @@ func webhookMiddleware(w Webhook) api.Middleware {
 
 						headers := map[string]string{
 							echo.HeaderContentDisposition: fmt.Sprintf("attachement; filename=%q", ctx.OutputFilename(outputPath)),
-							echo.HeaderContentType:        http.DetectContentType(fileHeader),
+							echo.HeaderContentType:        "application/octet-stream", // http.DetectContentType(fileHeader),
 							echo.HeaderContentLength:      strconv.FormatInt(fileStat.Size(), 10),
 							c.Get("traceHeader").(string): c.Get("trace").(string),
 						}
