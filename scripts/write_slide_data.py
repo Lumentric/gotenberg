@@ -16,13 +16,24 @@ titles = []
 max_length = 100
 
 for index, slide in enumerate(prs.slides):
-    title = "Untitled " + str(index)
+    title = None
     title_shape = slide.shapes.title
-    if title_shape:
-        title = re.sub(r"\s+", " ", title_shape.text)
-        if len(title) > max_length:
-            # TODO: may be better to find the closest space
-            title = title[0:max_length]
+    # If there is a dedicated title then take it, otherwise find a first shape with text and use first part of that text
+    if title_shape and hasattr(title_shape, "text") and len(title_shape.text) > 0:
+        title = re.sub(r"\s+", " ", title_shape.text).strip()
+    else:
+        for shape in slide.shapes:
+            if hasattr(shape, "text") and len(shape.text.strip()) > 0:
+                title = re.sub("[^0-9a-zA-Z ]+", "", shape.text.strip())
+                title = re.sub(r"\s+", " ", title).strip()
+                break
+
+    if title is None:
+        title = "Untitled " + str(index)
+
+    if len(title) > max_length:
+        # TODO: may be better to find the closest space
+        title = title[0:max_length]
 
     titles.append(title)
 
