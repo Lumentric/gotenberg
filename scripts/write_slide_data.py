@@ -12,6 +12,12 @@ images_path = sys.argv[2]
 
 prs = Presentation(pptx_path)
 
+prs_title = prs.core_properties.title
+
+if prs_title is None or len(prs_title) == 0 or prs_title == "PowerPoint Presentation":
+    file_name = os.path.basename(pptx_path)
+    prs_title = file_name.split('.')[0]
+
 titles = []
 max_length = 100
 
@@ -71,7 +77,7 @@ slides_data.sort(key=sort_by_index)
 data_file = None
 try:
     data_file = open(os.path.join(images_path, 'data.json'), "w")
-    data_file.write(json.dumps({"slides": slides_data}))
+    data_file.write(json.dumps({"title": prs_title, "slides": slides_data}))
 finally:
     if data_file is not None:
         data_file.close()
