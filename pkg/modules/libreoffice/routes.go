@@ -100,6 +100,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 
 			outputPaths := make([]string, len(inputPaths))
 
+			ctx.Log().Info("Converting input to PDF...")
 			for i, inputPath := range inputPaths {
 				outputPaths[i] = ctx.GeneratePath(".pdf")
 
@@ -122,6 +123,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					return fmt.Errorf("convert to PDF: %w", err)
 				}
 			}
+			ctx.Log().Info("Finished converting to PDF")
 
 			// So far so good, let's check if we have to merge the PDFs. Quick
 			// win: if there is only one PDF, skip this step.
@@ -217,7 +219,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					return fmt.Errorf("cannot create result folder: %w", err)
 				}
 
-				outputFilePath := filepath.Join(resultDir, "slide.png")
+				outputFilePath := filepath.Join(resultDir, "slide.jpg")
 
 				args := []string{
 					"-density",
@@ -230,6 +232,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					outputFilePath,
 				}
 
+				ctx.Log().Info("Creating slide images out of the resulting PDF...")
 				convertCmd, err := gotenberg.CommandContext(ctx, ctx.Log(), "/usr/bin/convert", args...)
 				if err != nil {
 					return api.WrapError(
@@ -258,6 +261,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					ctx.Log().Error("> > COMMAND WAS: " + convertCmd.CmdString())
 					return fmt.Errorf("failed to create images from PDF: %w, exit code: %d", err, exitCode)
 				}
+				ctx.Log().Info("Done creating images")
 
 				var resultPaths []string
 
@@ -278,6 +282,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					return fmt.Errorf("failed to return created images: %w", err)
 				}
 
+				ctx.Log().Info("Writing JSON data...")
 				dataCmd, err := gotenberg.CommandContext(
 					ctx,
 					ctx.Log(),
@@ -303,6 +308,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 					return fmt.Errorf("failed to write slide data: %w", err)
 				}
 				resultPaths = append(resultPaths, filepath.Join(resultDir, "data.json"))
+				ctx.Log().Info("Done writing JSON data")
 
 				err = ctx.AddOutputPaths(resultPaths...)
 			} else {
