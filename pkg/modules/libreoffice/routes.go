@@ -247,7 +247,7 @@ func convertRoute(unoAPI uno.API, engine gotenberg.PDFEngine) api.Route {
 				//convertCmd.Stdout = &outBuffer
 				//convertCmd.Stderr = &errBuffer
 
-				//err = convertCmd.Exec()
+				//err = convertCmd.Run()
 				//if err != nil {
 				//	ctx.Log().Error("> > > COMMAND WAS: " + convertCmd.String())
 				//	ctx.Log().Error("> > > STDOUT: " + outBuffer.String())
