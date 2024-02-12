@@ -18,7 +18,7 @@ if prs_title is None or len(prs_title) == 0 or prs_title == "PowerPoint Presenta
     file_name = os.path.basename(pptx_path)
     prs_title = file_name.split('.')[0]
 
-titles = []
+slide_info = []
 max_length = 100
 
 for index, slide in enumerate(prs.slides):
@@ -41,7 +41,12 @@ for index, slide in enumerate(prs.slides):
         # TODO: may be better to find the closest space
         title = title[0:max_length]
 
-    titles.append(title)
+    # Get slide notes if defined
+    notes = ""
+    if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+        notes = slide.notes_slide.notes_text_frame.text.strip()
+
+    slide_info.append({"title": title, "notes": notes})
 
 folder_content = os.listdir(images_path)
 
@@ -60,11 +65,12 @@ for entry in folder_content:
     else:
         index = int(index_match[0])
 
-    entry_title = titles[index]
+    slide = slide_info[index]
 
     slides_data.append({
         "index": index,
-        "title": entry_title,
+        "title": slide["title"],
+        "notes": slide["notes"],
         "image": entry
     })
 
@@ -77,7 +83,7 @@ slides_data.sort(key=sort_by_index)
 data_file = None
 try:
     data_file = open(os.path.join(images_path, 'data.json'), "w")
-    data_file.write(json.dumps({"title": prs_title, "slides": slides_data}))
+    data_file.write(json.dumps({"title": prs_title, "slides": slides_data}, ensure_ascii=False))
 finally:
     if data_file is not None:
         data_file.close()
