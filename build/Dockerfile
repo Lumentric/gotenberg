@@ -2,6 +2,7 @@
 # concatenate them. Also, we have to repeat ARG instructions in each build
 # stage that uses them.
 ARG GOLANG_VERSION
+ARG GOTENBERG_VERSION
 
 # ----------------------------------------------
 # Gotenberg binary build stage
@@ -24,25 +25,24 @@ RUN go mod download &&\
 COPY cmd ./cmd
 COPY pkg ./pkg
 
-RUN go build -o gotenberg -ldflags "-X 'github.com/gotenberg/gotenberg/v8/cmd.Version=$GOTENBERG_VERSION'" cmd/gotenberg/main.go
+RUN go build -o gotenberg -ldflags "-X 'github.com/gotenberg/gotenberg/v7/cmd.Version=$GOTENBERG_VERSION'" cmd/gotenberg/main.go
 
 # ----------------------------------------------
 # Final stage
 # ----------------------------------------------
-FROM debian:12-slim
+FROM debian:11-slim
 
 ARG GOTENBERG_VERSION
 ARG GOTENBERG_USER_GID
 ARG GOTENBERG_USER_UID
 ARG NOTO_COLOR_EMOJI_VERSION
 ARG PDFTK_VERSION
-ARG TMP_CHOMIUM_VERSION_ARMHF="116.0.5845.180-1~deb12u1"
 
-LABEL org.opencontainers.image.title="Gotenberg" \
-      org.opencontainers.image.description="A Docker-powered stateless API for PDF files." \
-      org.opencontainers.image.version="$GOTENBERG_VERSION" \
-      org.opencontainers.image.authors="Julien Neuhart <neuhart.julien@gmail.com>" \
-      org.opencontainers.image.documentation="https://gotenberg.dev" \
+LABEL author="Julien Neuhart" \
+      description="A Docker-powered stateless API for PDF files." \
+      github="https://github.com/gotenberg/gotenberg" \
+      version="$GOTENBERG_VERSION" \
+      website="https://gotenberg.dev" \
       org.opencontainers.image.source="https://github.com/gotenberg/gotenberg"
 
 RUN \
@@ -57,7 +57,8 @@ RUN \
     # Install system dependencies required for the next instructions or debugging.
     # Note: tini is a helper for reaping zombie processes.
     apt-get update -qq &&\
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl gnupg tini python3 python3-pip default-jre-headless ghostscript imagemagick &&\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl gnupg htop tini python3 python3-pip default-jre-headless ghostscript imagemagick &&\
+    ln -s /usr/bin/htop /usr/bin/top &&\
     # Cleanup.
     # Note: the Debian image does automatically a clean after each install thanks to a hook.
     # Therefore, there is no need for apt-get clean.
@@ -69,10 +70,10 @@ RUN \
     # Credits:
     # https://github.com/arachnys/athenapdf/blob/master/cli/Dockerfile.
     # https://help.accusoft.com/PrizmDoc/v12.1/HTML/Installing_Asian_Fonts_on_Ubuntu_and_Debian.html.
-    curl -o ./ttf-mscorefonts-installer_3.8.1_all.deb http://httpredir.debian.org/debian/pool/contrib/m/msttcorefonts/ttf-mscorefonts-installer_3.8.1_all.deb &&\
+    curl -o ./ttf-mscorefonts-installer_3.8_all.deb http://httpredir.debian.org/debian/pool/contrib/m/msttcorefonts/ttf-mscorefonts-installer_3.8_all.deb &&\
     apt-get update -qq &&\
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    ./ttf-mscorefonts-installer_3.8.1_all.deb \
+    ./ttf-mscorefonts-installer_3.8_all.deb \
     culmus \
     fonts-beng \
     fonts-hosny-amiri \
@@ -107,7 +108,7 @@ RUN \
     fonts-noto-ui-core \
     fonts-sil-gentium \
     fonts-sil-gentium-basic &&\
-    rm -f ./ttf-mscorefonts-installer_3.8.1_all.deb &&\
+    rm -f ./ttf-mscorefonts-installer_3.8_all.deb &&\
     # Add Color and Black-and-White Noto emoji font.
     # Credits:
     # https://github.com/gotenberg/gotenberg/pull/325.
@@ -120,9 +121,6 @@ RUN \
     # Install either Google Chrome stable on amd64 architecture or
     # Chromium on other architectures.
     # See https://github.com/gotenberg/gotenberg/issues/328.
-    # FIXME:
-    # armhf is currently not working with the latest version of Chromium.
-    # See: https://github.com/gotenberg/gotenberg/issues/709.
     /bin/bash -c \
     'set -e &&\
     if [[ "$(dpkg --print-architecture)" == "amd64" ]]; then \
@@ -131,14 +129,6 @@ RUN \
       apt-get update -qq &&\
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends --allow-unauthenticated google-chrome-stable &&\
       mv /usr/bin/google-chrome-stable /usr/bin/chromium; \
-    elif [[ "$(dpkg --print-architecture)" == "armhf" ]]; then \
-      apt-get update -qq &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends devscripts &&\
-      debsnap chromium-common "$TMP_CHOMIUM_VERSION_ARMHF" -v --force --binary --architecture armhf &&\
-      debsnap chromium "$TMP_CHOMIUM_VERSION_ARMHF" -v --force --binary --architecture armhf &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install --fix-broken -y -qq --no-install-recommends "./binary-chromium-common/chromium-common_${TMP_CHOMIUM_VERSION_ARMHF}_armhf.deb" "./binary-chromium/chromium_${TMP_CHOMIUM_VERSION_ARMHF}_armhf.deb" &&\
-      DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq devscripts &&\
-      rm -rf ./binary-chromium-common/* ./binary-chromium/*; \
     else \
       apt-get update -qq &&\
       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends chromium; \
@@ -149,17 +139,16 @@ RUN \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN \
-    # Install LibreOffice & unoconverter.
-    echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list &&\
+    # Install LibreOffice & unoconv.
     apt-get update -qq &&\
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends -t bookworm-backports libreoffice &&\
-    curl -Ls https://raw.githubusercontent.com/gotenberg/unoconverter/v0.0.1/unoconv -o /usr/bin/unoconverter &&\
-    chmod +x /usr/bin/unoconverter &&\
-    # unoconverter will look for the Python binary, which has to be at version 3.
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libreoffice &&\
+    curl -Ls https://raw.githubusercontent.com/dagwieers/unoconv/master/unoconv -o /usr/bin/unoconv &&\
+    chmod +x /usr/bin/unoconv &&\
+    # unoconv will look for the Python binary, which has to be at version 3.
     ln -s /usr/bin/python3 /usr/bin/python &&\
     # Verify installations.
     libreoffice --version &&\
-    unoconverter --version &&\
+    unoconv --version &&\
     # Cleanup.
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -197,9 +186,10 @@ COPY scripts/write_slide_data.py /usr/bin/
 COPY --from=binary-stage /home/gotenberg /usr/bin/
 
 # Environment variables required by modules or else.
+ENV GC_EXCLUDE_SUBSTR "hsperfdata_root,hsperfdata_gotenberg"
 ENV CHROMIUM_BIN_PATH /usr/bin/chromium
+ENV UNOCONV_BIN_PATH /usr/bin/unoconv
 ENV LIBREOFFICE_BIN_PATH /usr/lib/libreoffice/program/soffice.bin
-ENV UNOCONVERTER_BIN_PATH /usr/bin/unoconverter
 ENV PDFTK_BIN_PATH /usr/bin/pdftk
 ENV QPDF_BIN_PATH /usr/bin/qpdf
 
