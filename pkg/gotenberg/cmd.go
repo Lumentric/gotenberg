@@ -14,43 +14,43 @@ import (
 	"go.uber.org/zap"
 )
 
-// Cmd wraps an exec.Cmd.
+// Cmd wraps an [exec.Cmd].
 type Cmd struct {
 	ctx     context.Context
 	logger  *zap.Logger
 	process *exec.Cmd
 }
 
-// Command creates a Cmd without a context. It configures the internal
-// exec.Cmd of Cmd so that we may kill its unix process and all its children
-// without creating orphans.
+// Command creates a [Cmd] without a context. It configures the internal
+// [exec.Cmd] of [Cmd] so that we may kill its unix process and all its
+// children without creating orphans.
 //
 // See https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773.
-func Command(logger *zap.Logger, binPath string, args ...string) Cmd {
+func Command(logger *zap.Logger, binPath string, args ...string) *Cmd {
 	cmd := exec.Command(binPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	return Cmd{
+	return &Cmd{
 		ctx:     nil,
 		logger:  logger.Named(strings.ReplaceAll(binPath, "/", "")),
 		process: cmd,
 	}
 }
 
-// CommandContext creates a Cmd with a context. It configures the internal
-// exec.Cmd of Cmd so that we may kill its unix process and all its children
-// without creating orphans.
+// CommandContext creates a [Cmd] with a context. It configures the internal
+// [exec.Cmd] of [Cmd] so that we may kill its unix process and all its
+// children without creating orphans.
 //
 // See https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773.
-func CommandContext(ctx context.Context, logger *zap.Logger, binPath string, args ...string) (Cmd, error) {
+func CommandContext(ctx context.Context, logger *zap.Logger, binPath string, args ...string) (*Cmd, error) {
 	if ctx == nil {
-		return Cmd{}, errors.New("nil context")
+		return nil, errors.New("nil context")
 	}
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	return Cmd{
+	return &Cmd{
 		ctx:     ctx,
 		logger:  logger.Named(strings.ReplaceAll(binPath, "/", "")),
 		process: cmd,
@@ -58,7 +58,7 @@ func CommandContext(ctx context.Context, logger *zap.Logger, binPath string, arg
 }
 
 // Start starts the command but does not wait for its completion.
-func (cmd Cmd) Start() error {
+func (cmd *Cmd) Start() error {
 	err := cmd.pipeOutput()
 	if err != nil {
 		return fmt.Errorf("pipe unix process output: %w", err)
@@ -76,7 +76,7 @@ func (cmd Cmd) Start() error {
 
 // Wait waits for the command to complete. It should be called when using the
 // Start method, so that the command does not leak zombies.
-func (cmd Cmd) Wait() error {
+func (cmd *Cmd) Wait() error {
 	err := cmd.process.Wait()
 	if err != nil {
 		return fmt.Errorf("wait for unix process: %w", err)
@@ -91,7 +91,7 @@ func (cmd Cmd) CmdString() string {
 
 // Exec executes the command and wait for its completion or until the context
 // is done. In any case, it kills the unix process and all its children.
-func (cmd Cmd) Exec() (int, error) {
+func (cmd *Cmd) Exec() (int, error) {
 	if cmd.ctx == nil {
 		return 10, errors.New("nil context")
 	}
@@ -139,7 +139,7 @@ func (cmd Cmd) Exec() (int, error) {
 
 // pipeOutput creates logs entries according to the process stdout and stderr.
 // It does nothing if the logging level is not debug.
-func (cmd Cmd) pipeOutput() error {
+func (cmd *Cmd) pipeOutput() error {
 	checkedEntry := cmd.logger.Check(zap.DebugLevel, "check for debug level before piping unix process output")
 	if checkedEntry == nil {
 		return nil
@@ -159,11 +159,15 @@ func (cmd Cmd) pipeOutput() error {
 	// (either stdout or stderr).
 	logCommandOutput := func(logger *zap.Logger, reader io.ReadCloser) {
 		r := bufio.NewReader(reader)
-		defer reader.Close()
+		defer func(reader io.ReadCloser) {
+			err := reader.Close()
+			if err != nil {
+				logger.Error(fmt.Sprintf("close reader: %s", err))
+			}
+		}(reader)
 
 		for {
 			line, _, err := r.ReadLine()
-
 			if err != nil {
 				if err != io.EOF && !strings.Contains(err.Error(), "file already closed") {
 					logger.Error(fmt.Sprintf("pipe unix process output error: %s", err))
@@ -187,7 +191,7 @@ func (cmd Cmd) pipeOutput() error {
 // Kill kills the unix process and all its children without creating orphans.
 //
 // See https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773.
-func (cmd Cmd) Kill() error {
+func (cmd *Cmd) Kill() error {
 	if cmd.process == nil {
 		// We cannot use the logger here, because for whatever reason using it
 		// result to a panic.
